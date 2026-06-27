@@ -1,8 +1,8 @@
 
-SMP - v2 2026-06-20 9:50am
+SMP - v2 2026-06-27 6:33pm
 ==============================
 
-This dataset was exported via roboflow.com on June 20, 2026 at 2:57 AM GMT
+This dataset was exported via roboflow.com on June 27, 2026 at 11:33 AM GMT
 
 Roboflow is an end-to-end computer vision platform that helps you
 * collaborate with your team on computer vision projects
@@ -17,7 +17,7 @@ visit https://github.com/roboflow/notebooks
 
 To find over 100k other datasets and pre-trained models, visit https://universe.roboflow.com
 
-The dataset includes 191 images.
+The dataset includes 98 images.
 SMP are annotated in YOLOv11 format.
 
 The following pre-processing was applied to each image:

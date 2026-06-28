@@ -9,7 +9,7 @@ print(f"GPU name: {torch.cuda.get_device_name(0) if torch.cuda.is_available() el
 # CẤU HÌNH RESUME: Chỉ định file checkpoint gần nhất trước khi sập
 # Thường nằm ở: project/name/weights/last.pt
 # -------------------------------------------------------------
-checkpoint_last = "runs/anpr_v1/weights/last.pt" 
+checkpoint_last = "LAPTRINH PYTHON BTL /Dữ liệu train sau khi scale khuônn ảnh/weights/last.pt" 
 
 try:
     # Thử load lại model từ checkpoint cũ để chạy tiếp
@@ -42,4 +42,4 @@ except Exception as e:
     )
 
 print(f"\n Train hoàn thiện!")
-print(f"Best model: runs/anpr_v1/weights/best.pt")
+print(f"Best model: LAPTRINH PYTHON BTL /Dữ liệu train sau khi scale khuônn ảnh/weights/best.pt")

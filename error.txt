@@ -1,0 +1,12 @@
+C:/msys64/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/15.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: C:\msys64\tmp\ccqzWrDH.o:parking_server:(.text+0x263): undefined reference to `cv::imwrite(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, cv::_InputArray const&, std::vector<int, std::allocator<int> > const&)'
+C:/msys64/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/15.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: C:\msys64\tmp\ccqzWrDH.o:parking_server:(.text+0x47dc): undefined reference to `__imp_recv'
+C:/msys64/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/15.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: C:\msys64\tmp\ccqzWrDH.o:parking_server:(.text+0x54ab): undefined reference to `__imp_send'
+C:/msys64/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/15.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: C:\msys64\tmp\ccqzWrDH.o:parking_server:(.text+0x54bf): undefined reference to `__imp_closesocket'
+C:/msys64/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/15.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: C:\msys64\tmp\ccqzWrDH.o:parking_server:(.text+0x5878): undefined reference to `__imp_WSAStartup'
+C:/msys64/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/15.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: C:\msys64\tmp\ccqzWrDH.o:parking_server:(.text+0x58a0): undefined reference to `__imp_socket'
+C:/msys64/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/15.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: C:\msys64\tmp\ccqzWrDH.o:parking_server:(.text+0x5904): undefined reference to `__imp_setsockopt'
+C:/msys64/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/15.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: C:\msys64\tmp\ccqzWrDH.o:parking_server:(.text+0x592f): undefined reference to `__imp_htons'
+C:/msys64/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/15.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: C:\msys64\tmp\ccqzWrDH.o:parking_server:(.text+0x5951): undefined reference to `__imp_bind'
+C:/msys64/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/15.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: C:\msys64\tmp\ccqzWrDH.o:parking_server:(.text+0x5991): undefined reference to `__imp_listen'
+C:/msys64/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/15.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: C:\msys64\tmp\ccqzWrDH.o:parking_server:(.text+0x5a1d): undefined reference to `__imp_accept'
+collect2.exe: error: ld returned 1 exit status

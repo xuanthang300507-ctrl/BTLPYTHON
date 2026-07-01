@@ -1,9 +1,9 @@
-train: ../train/images
-val: ../valid/images
-test: ../test/images
+train: train/images
+val: test/images
+test: null
 
 nc: 1
-names: ['0']
+names: ["0"]
 
 roboflow:
   workspace: thang-nguyen-fcp4i

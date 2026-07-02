@@ -41,6 +41,7 @@
 #include <chrono>
 #include <atomic>
 #include <cctype>
+#include <mutex>
 // ── OpenCV (camera capture) ────────────────────────────────
 #include <opencv2/opencv.hpp>
 // ── Socket headers ─────────────────────────────────────────
@@ -374,6 +375,7 @@ std::string findPathJSON(Node nodes[ROW][COL], Position s, Position g)
 // ============================================================
 
 ParkingLot lot;
+std::recursive_mutex g_lotMutex;
 
 void initLot()
 {
@@ -431,7 +433,11 @@ int findNearestSlot()
 void addHistory(const char *text)
 {
   if (lot.historyCount < MAX_HISTORY)
-    strcpy(lot.history[lot.historyCount++].text, text);
+  {
+    strncpy(lot.history[lot.historyCount].text, text, sizeof(lot.history[lot.historyCount].text) - 1);
+    lot.history[lot.historyCount].text[sizeof(lot.history[lot.historyCount].text) - 1] = '\0';
+    lot.historyCount++;
+  }
 }
 
 void saveData()
@@ -486,7 +492,11 @@ void loadHistory()
     return;
   char line[120];
   while (f.getline(line, sizeof(line)) && lot.historyCount < MAX_HISTORY)
-    strcpy(lot.history[lot.historyCount++].text, line);
+  {
+    strncpy(lot.history[lot.historyCount].text, line, sizeof(lot.history[lot.historyCount].text) - 1);
+    lot.history[lot.historyCount].text[sizeof(lot.history[lot.historyCount].text) - 1] = '\0';
+    lot.historyCount++;
+  }
 }
 
 void saveHistory(const char *text)
@@ -529,12 +539,43 @@ std::string getParam(const std::string &body, const std::string &key)
   return urlDecode(e == std::string::npos ? body.substr(p) : body.substr(p, e - p));
 }
 
+std::string normalizePlate(const std::string &raw)
+{
+  std::string plate;
+  for (unsigned char ch : raw)
+  {
+    if (std::isalnum(ch))
+      plate += (char)std::toupper(ch);
+  }
+  return plate;
+}
+
+std::string jsonEscape(const std::string &text)
+{
+  std::string esc;
+  for (unsigned char c : text)
+  {
+    switch (c)
+    {
+    case '\\': esc += "\\\\"; break;
+    case '"': esc += "\\\""; break;
+    case '\n': esc += "\\n"; break;
+    case '\r': esc += "\\r"; break;
+    case '\t': esc += "\\t"; break;
+    default: esc += (char)c; break;
+    }
+  }
+  return esc;
+}
+
 // ============================================================
 //  JSON BUILDERS
 // ============================================================
 
 std::string lotStatusJSON()
 {
+  std::lock_guard<std::recursive_mutex> lock(g_lotMutex);
+
   int occupied = 0;
   for (int i = 0; i < lot.slotCount; i++)
     if (lot.slots[i].occupied)
@@ -546,42 +587,34 @@ std::string lotStatusJSON()
   s += "\"occupied\":" + std::to_string(occupied) + ",";
   s += "\"free\":" + std::to_string(free) + ",";
   s += "\"camera\":" + std::string(g_cameraOK ? "true" : "false") + ",";
+
   s += "\"cars\":[";
   for (int i = 0; i < lot.carCount; i++)
   {
-    if (i)
-      s += ",";
-    s += "{\"plate\":\"" + std::string(lot.cars[i].plate) + "\",";
-    s += "\"slot\":\"" + std::string(lot.cars[i].slotID) + "\",";
-    s += "\"checkin\":\"" + std::string(lot.cars[i].checkIn) + "\"}";
+    if (i) s += ",";
+    s += "{\"plate\":\"" + jsonEscape(lot.cars[i].plate) + "\",";
+    s += "\"slot\":\"" + jsonEscape(lot.cars[i].slotID) + "\",";
+    s += "\"checkin\":\"" + jsonEscape(lot.cars[i].checkIn) + "\"}";
   }
+
   s += "],\"slots\":[";
   for (int i = 0; i < lot.slotCount; i++)
   {
-    if (i)
-      s += ",";
-    s += "{\"id\":\"" + std::string(lot.slots[i].id) + "\",";
+    if (i) s += ",";
+    s += "{\"id\":\"" + jsonEscape(lot.slots[i].id) + "\",";
     s += "\"x\":" + std::to_string(lot.slots[i].pos.x) + ",";
     s += "\"y\":" + std::to_string(lot.slots[i].pos.y) + ",";
-    s += "\"occupied\":" + (lot.slots[i].occupied ? std::string("true") : std::string("false")) + "}";
+    s += "\"occupied\":" + std::string(lot.slots[i].occupied ? "true" : "false") + "}";
   }
+
   s += "],\"history\":[";
-  int start = std::max(0, lot.historyCount - 20);
-  for (int i = lot.historyCount - 1; i >= start; i--)
+  int begin = std::max(0, lot.historyCount - 20);
+  bool first = true;
+  for (int i = lot.historyCount - 1; i >= begin; i--)
   {
-    if (i != lot.historyCount - 1)
-      s += ",";
-    // escape quotes
-    std::string txt = lot.history[i].text;
-    std::string esc;
-    for (char c : txt)
-    {
-      if (c == '"')
-        esc += "\\\"";
-      else
-        esc += c;
-    }
-    s += "\"" + esc + "\"";
+    if (!first) s += ",";
+    first = false;
+    s += "\"" + jsonEscape(lot.history[i].text) + "\"";
   }
   s += "]}";
   return s;
@@ -593,13 +626,11 @@ std::string lotStatusJSON()
 
 std::string handlePark(const std::string &body)
 {
-  std::string plate = getParam(body, "plate");
+  std::lock_guard<std::recursive_mutex> lock(g_lotMutex);
+
+  std::string plate = normalizePlate(getParam(body, "plate"));
   if (plate.empty())
     return "{\"ok\":false,\"msg\":\"Thiếu biển số xe\"}";
-  // sanitize
-  for (char c : plate)
-    if (!isalnum(c) && c != '-')
-      return "{\"ok\":false,\"msg\":\"Biển số không hợp lệ\"}";
 
   if (findCar(plate.c_str()) != -1)
     return "{\"ok\":false,\"msg\":\"Xe đã có trong bãi!\"}";
@@ -610,10 +641,15 @@ std::string handlePark(const std::string &body)
   if (si == -1)
     return "{\"ok\":false,\"msg\":\"Bãi đã đầy!\"}";
 
-  // A* path
-  Position start = {0, 0}, goal = lot.slots[si].pos;
+  Position start = {0, 0};
+  Position goal = lot.slots[si].pos;
   std::string pathArr = findPathJSON(lot.nodes, start, goal);
   int dist = getDistance(lot.nodes, start, goal);
+  if (dist >= 999999)
+  {
+    pathArr = "[]";
+    dist = 0;
+  }
 
   if (plate.size() >= sizeof(lot.cars[lot.carCount].plate))
     return "{\"ok\":false,\"msg\":\"Biển số quá dài!\"}";
@@ -623,35 +659,34 @@ std::string handlePark(const std::string &body)
   lot.cars[lot.carCount].plate[sizeof(lot.cars[lot.carCount].plate) - 1] = '\0';
   strncpy(lot.cars[lot.carCount].slotID, lot.slots[si].id, sizeof(lot.cars[lot.carCount].slotID) - 1);
   lot.cars[lot.carCount].slotID[sizeof(lot.cars[lot.carCount].slotID) - 1] = '\0';
+
   time_t t = time(0);
-  struct tm *tm = localtime(&t);
+  struct tm *tmInfo = localtime(&t);
   char ts[32];
-  strftime(ts, sizeof(ts), "%H:%M %d/%m/%Y", tm);
-  strcpy(lot.cars[lot.carCount].checkIn, ts);
+  strftime(ts, sizeof(ts), "%H:%M %d/%m/%Y", tmInfo);
+  strncpy(lot.cars[lot.carCount].checkIn, ts, sizeof(lot.cars[lot.carCount].checkIn) - 1);
+  lot.cars[lot.carCount].checkIn[sizeof(lot.cars[lot.carCount].checkIn) - 1] = '\0';
   lot.carCount++;
 
   char hist[120];
-  sprintf(hist, "[IN ] %s → %s  (%s)", plate.c_str(), lot.slots[si].id, ts);
+  snprintf(hist, sizeof(hist), "[IN ] %s -> %s (%s)", plate.c_str(), lot.slots[si].id, ts);
   addHistory(hist);
   saveHistory(hist);
   saveData();
 
-  return "{\"ok\":true,\"msg\":\"Gửi xe thành công!\","
-         "\"slot\":\"" +
-         std::string(lot.slots[si].id) + "\","
-                                         "\"x\":" +
-         std::to_string(lot.slots[si].pos.x) + ","
-                                               "\"y\":" +
-         std::to_string(lot.slots[si].pos.y) + ","
-                                               "\"steps\":" +
-         std::to_string(dist) + ","
-                                "\"path\":" +
-         pathArr + "}";
+  return "{\"ok\":true,\"msg\":\"Gửi xe thành công!\"," 
+         "\"slot\":\"" + jsonEscape(lot.slots[si].id) + "\"," 
+         "\"x\":" + std::to_string(lot.slots[si].pos.x) + "," 
+         "\"y\":" + std::to_string(lot.slots[si].pos.y) + "," 
+         "\"steps\":" + std::to_string(dist) + "," 
+         "\"path\":" + pathArr + "}";
 }
 
 std::string handleLeave(const std::string &body)
 {
-  std::string plate = getParam(body, "plate");
+  std::lock_guard<std::recursive_mutex> lock(g_lotMutex);
+
+  std::string plate = normalizePlate(getParam(body, "plate"));
   if (plate.empty())
     return "{\"ok\":false,\"msg\":\"Thiếu biển số xe\"}";
 
@@ -660,7 +695,9 @@ std::string handleLeave(const std::string &body)
     return "{\"ok\":false,\"msg\":\"Không tìm thấy xe trong bãi!\"}";
 
   char slotID[10];
-  strcpy(slotID, lot.cars[idx].slotID);
+  strncpy(slotID, lot.cars[idx].slotID, sizeof(slotID) - 1);
+  slotID[sizeof(slotID) - 1] = '\0';
+
   int si = findSlot(slotID);
   if (si != -1)
     lot.slots[si].occupied = false;
@@ -670,26 +707,29 @@ std::string handleLeave(const std::string &body)
   lot.carCount--;
 
   time_t t = time(0);
-  struct tm *tm = localtime(&t);
+  struct tm *tmInfo = localtime(&t);
   char ts[32];
-  strftime(ts, sizeof(ts), "%H:%M %d/%m/%Y", tm);
+  strftime(ts, sizeof(ts), "%H:%M %d/%m/%Y", tmInfo);
+
   char hist[120];
-  sprintf(hist, "[OUT] %s ← %s  (%s)", plate.c_str(), slotID, ts);
+  snprintf(hist, sizeof(hist), "[OUT] %s <- %s (%s)", plate.c_str(), slotID, ts);
   addHistory(hist);
   saveHistory(hist);
   saveData();
 
-  return "{\"ok\":true,\"msg\":\"Lấy xe thành công!\",\"slot\":\"" + std::string(slotID) + "\"}";
+  return "{\"ok\":true,\"msg\":\"Lấy xe thành công!\",\"slot\":\"" + jsonEscape(slotID) + "\"}";
 }
 
 std::string handleReset()
 {
+  std::lock_guard<std::recursive_mutex> lock(g_lotMutex);
+
   initLot();
   lot.carCount = 0;
   lot.historyCount = 0;
   saveData();
 
-  const char *msg = "=== RESET BÃI XE ===";
+  const char *msg = "=== RESET BAI XE ===";
   std::ofstream f("history.txt", std::ios::trunc);
   if (f)
     f << msg << "\n";
@@ -697,29 +737,34 @@ std::string handleReset()
 
   return "{\"ok\":true,\"msg\":\"Đã reset bãi xe!\"}";
 }
+
 std::string handleScan(const std::string &body)
 {
-  // Nhận biển số từ Python ANPR script
-  std::string plate = getParam(body, "plate");
+  std::string plate = normalizePlate(getParam(body, "plate"));
   if (plate.empty())
     return "{\"ok\":false,\"msg\":\"ANPR: Không đọc được biển số\"}";
 
-  // Gọi thẳng handlePark với plate đã nhận diện
-  // Tái sử dụng body format giống /api/park
-  return handlePark("plate=" + plate);
+  bool exists = false;
+  {
+    std::lock_guard<std::recursive_mutex> lock(g_lotMutex);
+    exists = (findCar(plate.c_str()) != -1);
+    std::cout << "[AI SCAN] Plate = " << plate << (exists ? " | CHECK-OUT" : " | CHECK-IN") << std::endl;
+  }
+
+  if (!exists)
+    return handlePark("plate=" + plate);
+  return handleLeave("plate=" + plate);
 }
 
-// Ghi file cờ hiệu để Python (anpr.py) biết là cần chụp & quét NGAY,
-// thay vì tự động quét liên tục mỗi khi camera ghi đè current_frame.png.
 std::string handleScanTrigger()
 {
   if (!g_cameraOK)
     return "{\"ok\":false,\"msg\":\"Camera chưa kết nối, không thể chụp!\"}";
 
-  std::ofstream f(SCAN_TRIGGER_FILE);
+  std::ofstream f(SCAN_TRIGGER_FILE, std::ios::trunc);
   if (!f)
     return "{\"ok\":false,\"msg\":\"Không ghi được file trigger!\"}";
-  f << time(0); // nội dung không quan trọng, chỉ cần mtime file đổi
+  f << time(0);
   f.close();
 
   return "{\"ok\":true,\"msg\":\"Đã gửi yêu cầu chụp & quét biển số!\"}";
@@ -1250,20 +1295,30 @@ async function doScanTrigger(){
     const d=await (await fetch('/api/scan-trigger',{method:'POST'})).json();
     if(!d.ok){st.textContent=d.msg;toast(d.msg,false);return;}
     st.textContent='Đã gửi trigger. Đang chờ Python YOLO + OCR trả kết quả...';
-    let tries=0;
-    const timer=setInterval(async()=>{
-      tries++;
-      const s=await getStatus();
-      renderStatus(s);
-      if(s.cars.length>before){
-        clearInterval(timer);
-        st.textContent='Đã nhận diện và thêm xe vào bãi.';
-        toast('Quét biển số thành công',true);
-      }else if(tries>=18){
-        clearInterval(timer);
-        st.textContent='Chưa nhận được kết quả. Kiểm tra anpr.py có đang chạy không.';
-      }
-    },1000);
+    let tries = 0;
+    const timer = setInterval(async() => {
+        tries++;
+        const s = await getStatus();
+        renderStatus(s);
+        //Kiểm tra xem số lượng xe có thay đổi so với trước hay không
+          if (s.cars.length !== before) {
+            clearInterval(timer);
+            // Tự động reset path và target nếu xe rời bãi (CHECK_OUT)
+            if (s.cars.length < before) {
+              state.path = []; 
+              state.target = null; 
+              document.getElementById('path-info').className = 'path-info';
+              st.textContent = 'Đã nhận diện: Xe rời bãi thành công (Check-out)!';
+            } else {
+              st.textContent = 'Đã nhận diện: Xe vào bãi thành công (Check-in)!';
+            }
+            toast('AI xử lý log thành công', true);
+          } else if (tries >= 18) {
+            clearInterval(timer);
+            st.textContent = 'Chưa nhận được kết quả. Kiểm tra anpr.py có đang chạy không.';
+          }
+        }, 1000);
+
   }catch(e){st.textContent='Lỗi kết nối server';toast('Lỗi kết nối server',false);}
   finally{btn.disabled=false;btn.textContent='Chụp & quét biển số bằng AI';}
 }
@@ -1303,13 +1358,59 @@ std::string httpResponse(int code, const std::string &ct, const std::string &bod
   return r.str();
 }
 
+bool sendAll(int sock, const std::string &data)
+{
+  size_t sent = 0;
+  while (sent < data.size())
+  {
+    int n = send(sock, data.data() + sent, (int)std::min<size_t>(data.size() - sent, 16384), 0);
+    if (n <= 0)
+      return false;
+    sent += (size_t)n;
+  }
+  return true;
+}
+
+std::string readHttpRequest(int sock)
+{
+  std::string req;
+  char buf[4096];
+
+  while (req.find("\r\n\r\n") == std::string::npos)
+  {
+    int n = recv(sock, buf, sizeof(buf), 0);
+    if (n <= 0)
+      return req;
+    req.append(buf, n);
+    if (req.size() > 65536)
+      return req;
+  }
+
+  size_t headerEnd = req.find("\r\n\r\n");
+  size_t contentLength = 0;
+  size_t cl = req.find("Content-Length:");
+  if (cl != std::string::npos && cl < headerEnd)
+  {
+    cl += 15;
+    while (cl < req.size() && (req[cl] == ' ' || req[cl] == '\t')) cl++;
+    contentLength = (size_t)std::stoul(req.substr(cl));
+  }
+
+  size_t bodyStart = headerEnd + 4;
+  while (req.size() < bodyStart + contentLength)
+  {
+    int n = recv(sock, buf, sizeof(buf), 0);
+    if (n <= 0)
+      break;
+    req.append(buf, n);
+  }
+  return req;
+}
+
 void handleClient(int sock)
 {
-  char buf[8192] = {};
-  recv(sock, buf, sizeof(buf) - 1, 0);
+  std::string req = readHttpRequest(sock);
 
-  std::string req(buf);
-  // parse method + path
   std::string method, path, bodyStr;
   {
     std::istringstream ss(req);
@@ -1317,12 +1418,13 @@ void handleClient(int sock)
     ss >> method >> path >> version;
   }
 
-  // find body (after \r\n\r\n)
   size_t bp = req.find("\r\n\r\n");
   if (bp != std::string::npos)
     bodyStr = req.substr(bp + 4);
 
   std::string resp;
+  try
+  {
   if (path == "/" || path == "/index.html")
   {
     resp = httpResponse(200, "text/html; charset=utf-8", std::string(HTML));
@@ -1376,7 +1478,20 @@ void handleClient(int sock)
     resp = httpResponse(404, "text/plain", "Not found");
   }
 
-  send(sock, resp.c_str(), resp.size(), 0);
+  }
+  catch (const std::exception &e)
+  {
+    std::string msg = std::string("{\"ok\":false,\"msg\":\"Server exception: ") + jsonEscape(e.what()) + "\"}";
+    resp = httpResponse(200, "application/json", msg);
+    std::cerr << "[HTTP] Exception: " << e.what() << std::endl;
+  }
+  catch (...)
+  {
+    resp = httpResponse(200, "application/json", "{\"ok\":false,\"msg\":\"Unknown server exception\"}");
+    std::cerr << "[HTTP] Unknown exception" << std::endl;
+  }
+
+  sendAll(sock, resp);
   CLOSE(sock);
 }
 
